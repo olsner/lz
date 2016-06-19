@@ -5,7 +5,8 @@
 #define RDO if (!R) goto fail; else
 #define TO(s, cond) if (cond) goto s
 
-#define debug(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+#define LOG_DEBUG 0
+#define debug(fmt, ...) do { if (LOG_DEBUG) fprintf(stderr, fmt, ## __VA_ARGS__); } while (0)
 
 static int getint() {
 	int c, res = 0;

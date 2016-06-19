@@ -16,7 +16,7 @@ tmp=`mktemp`
 if which valgrind &>/dev/null; then
 	valgrind="valgrind --track-fds=yes --leak-check=yes"
 fi
-g++ -g -Os -Wall -Dtest_snprintfxx -x c++ "$0" -std=gnu++11 -o $tmp && $valgrind $tmp
+g++ -g -Os -Wall -Dtest_snprintfxx -x c++ "$0" -std=c++11 -o $tmp && $valgrind $tmp
 e=$?
 rm $tmp
 exit $e
@@ -52,7 +52,7 @@ VarargWrap<T> vararg_wrap(T&& t) {
 	return t;
 }
 
-struct SprintfXX {
+struct SnprintfXX {
 	template <typename... Args>
 	void operator()(std::string& buf, const char *fmt, Args... args) {
 		char *bufp = NULL;
@@ -69,12 +69,30 @@ struct SprintfXX {
 		return snprintf(buf, size, fmt, VarargifyXX(args)...);
 	}
 };
-struct SprintfWrapper {
+struct SnprintfWrapper {
 	template <typename... Args>
 	int operator()(char *buf, size_t size, const char *fmt, Args... args) {
 		return snprintf(buf, size, fmt, args...);
 	}
 
+	SnprintfXX operator++(int) {
+		return SnprintfXX();
+	}
+};
+struct SprintfXX {
+	template <typename... Args>
+	std::string operator()(const char *fmt, Args... args) {
+		char *bufp = NULL;
+		size_t bufsize = 0;
+		FILE *fp = open_memstream(&bufp, &bufsize);
+		fprintf(fp, fmt, VarargifyXX(args)...);
+		fclose(fp);
+		std::string buf(bufp, bufsize);
+		free(bufp);
+		return buf;
+	}
+};
+struct SprintfWrapper {
 	SprintfXX operator++(int) {
 		return SprintfXX();
 	}
@@ -96,10 +114,12 @@ struct PrintfWrapper {
 		return &printf;
 	}
 };
-SprintfWrapper __snprintf;
+SnprintfWrapper __snprintf;
+SprintfWrapper __sprintf;
 PrintfWrapper __printf;
 
 #define snprintf __snprintf
+#define sprintf __sprintf
 #define printf __printf
 
 #ifdef test_snprintfxx
