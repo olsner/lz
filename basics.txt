@@ -1,0 +1,39 @@
+* LZ-based (ish) - link to cbloom post
+  Basis: each byte is xor'ed against a current "match" offset,
+  some command for setting new offset,
+  first symbol after offset change is coded statically without xor
+  run-length of zeroes?
+
+* Entropy coding to be evaluated
+
+* "Optimal parse" with N contexts
+
+
+LZ4 = SEQ*
+SEQ =
+	LITLEN(4b) MATCHLEN(4b) LITLEN(255x)
+	BYTE(LITLEN)
+	OFFSET(2) MATCHLEN(255x)
+LITS=0: No literals
+LITS=15: extra lit-count byte
+MATCHLEN=0: 4 bytes
+MATCHLEN=15: 19 + extra matchlen bytes
+
+(255x = 255 means another byte, value adds up)
+
+LZ8x = OFFSET(255x) LITLEN(255x) BYTE XORBYTE(LITLEN)
+
+Each block has a new offset (backwards from the ends of the stream), a single
+last-after-match literal, and LITLEN delta bytes
+TODO: Try offset relative to previous offset rather than absolute
+TODO: LITLEN bias - at least one byte? at least 2?
+
+Initial byte: 0, offset: 0 (each xorbyte is xor to previous)
+
+Then send this through entropy encoding with contexts:
+* offset (1st byte, following bytes are sent literally)
+* literal -"-
+* non-xor byte
+* xor bytes
+
+(runlength encoding?)
