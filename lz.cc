@@ -82,9 +82,12 @@ string read_file(const char *path) {
 	return read_file(fopen(path, "rb"), true);
 }
 
+void write_file(FILE *fp, const string& data) {
+	fwrite(data.data(), data.size(), 1, fp);
+}
 void write_file(const char *fname, const string& data) {
 	FILE *fp = fopen(fname, "wb");
-	fwrite(data.data(), data.size(), 1, fp);
+	write_file(fp, data);
 	fclose(fp);
 }
 
@@ -273,5 +276,8 @@ int main(int argc, const char *argv[]) {
 	fprintf(stderr, "%zu bytes of input\n", input.size());
 	const string output = compress(input);
 	fprintf(stderr, "%zu bytes of output\n", output.size());
-	write_file("lz.out", output);
+	if (argc > 2)
+		write_file(argv[2], output);
+	else
+		write_file("lz.out", output);
 }
