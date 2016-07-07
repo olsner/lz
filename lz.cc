@@ -256,7 +256,7 @@ string compress(const string& input) {
 		// This happens at the *end* of each run at the same offset.
 		// That is, we should output the last_length characters of the last run
 		// after the header, then start collecting the next run.
-		if (offset != e.offset) {
+		if (offset != e.offset || i == input.size() - 1) {
 			printf++("%5u: %s\n", i, prev->dump());
 			output += gen(offset, last_length - 1, &input[0], &input[i]);
 			last_length = 0;
