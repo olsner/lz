@@ -114,10 +114,30 @@ struct PrintfWrapper {
 		return &printf;
 	}
 };
+
+struct FprintfWrapper {
+	template <typename... Args>
+	int operator()(FILE *fp, const char *fmt, Args... args) {
+		// With 'args' as a pack rather than a vararg, we can't use the nice
+		// gcc format warnings. There are also problems with our additions -
+		// gcc by itself might e.g. warn that std::string is not valid for %s.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-security"
+		return fprintf(fp, fmt, args...);
+#pragma GCC diagnostic pop
+	}
+
+	VarargWrap<decltype(&fprintf)> operator++(int) {
+		return &fprintf;
+	}
+};
+
 SnprintfWrapper __snprintf;
 SprintfWrapper __sprintf;
 PrintfWrapper __printf;
+FprintfWrapper __fprintf;
 
+#define fprintf __fprintf
 #define snprintf __snprintf
 #define sprintf __sprintf
 #define printf __printf
