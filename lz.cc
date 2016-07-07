@@ -57,7 +57,10 @@ Cost lit_cost(uint8_t lit) {
 	return VAL_COST(lit_conv_table[lit]);
 }
 Cost length_cost(int len) {
-	return len > 255 ? BYTE_COST(1 + len/255) : VAL_COST(len);
+	return BYTE_COST(len + 254 / 255);
+}
+Cost new_offset_cost(int len) {
+	return BYTE_COST(1) + (len > 127 ? length_cost(len-128) : 0);
 }
 // Amount to add to cost when increasing 'len' by 1
 Cost incr_length_cost(int len) {
@@ -94,17 +97,18 @@ void write_file(const char *fname, const string& data) {
 struct lze
 {
 	int offset; // current offset
-	int length; // length since change of offset
+	int zeroes; // number of consecutive zero deltas
 	int cost; // cost in bytes to get this far
-	unsigned valid : 1; // 1 if valid, 0 if not filled in
-	char prev : 4; // index of previous entry
-	char next : 3; // index of next entry, filled in by trace
+	uint8_t valid : 1; // 1 if valid, 0 if not filled in
+	uint8_t prev : 4; // index of previous entry
+	uint8_t next : 3; // index of next entry, filled in by trace
 
 	bool operator==(const lze& other) const {
-		return offset == other.offset && length == other.length && cost == other.cost;
+		assert(valid && other.valid);
+		return offset == other.offset && zeroes == other.zeroes;
 	}
 	string dump(const lze* prev = nullptr) const {
-		return sprintf++("%3d|%4d|%d", offset, length, cost);
+		return sprintf++("%3d|%4d|%d", offset, zeroes, cost);
 		// TODO Figure out which prev was the base for this (or actually save it)
 	}
 
@@ -123,7 +127,8 @@ int insert_lze(lze *dest, int n, lze result) {
 	for (int i = 0; i < n; i++) {
 		if (result.cost < dest[i].cost) {
 			swap(dest[i], result);
-		} else if (result == dest[i]) {
+		}
+		if (result == dest[i]) {
 			// Exact result already present
 //			printf++("Result %s already at %d\n", result.dump(), i);
 			return n;
@@ -134,46 +139,47 @@ int insert_lze(lze *dest, int n, lze result) {
 	return n;
 }
 
-lze extend(const lze& prev, const char *begin, const char *pos) {
-	char lastc = prev.offset < pos - begin ? pos[-1-prev.offset] : 0;
-//	printf++("Extending %s with %02x ^ %02x at %td\n",
-//		prev.dump(), lastc, pos[0], pos - begin);
-	return lze { prev.offset,
-		prev.length + 1,
-		prev.cost + lit_cost(lastc ^ pos[0])
-			+ incr_length_cost(prev.length),
-		true, 0, 0,
-	};
-}
-
-lze new_offset(const lze& prev, int offset, int lit) {
+lze new_offset(const lze *p, uint8_t i, int offset) {
+	const lze& prev = p[i];
 	return lze {
 		offset,
 		0,
-		prev.cost + length_cost(offset) + length_cost(0) + lit_cost(lit),
-		true, 0, 0,
+		prev.cost + new_offset_cost(offset),
+		true, i, 0,
 	};
 }
 
-void add(const lze *prev, const char *begin, const char *pos, lze *dest) {
+void add(const lze *prevs, const char *begin, const char *pos, lze *dest) {
 	int added = 0;
 	// Length-extend each match by one (delta) literal
-	for (int i = N; i--;) {
-		if (!prev[i].valid) continue;
+	for (uint8_t i = N; i--;) {
+		const lze& prev = prevs[i];
+		if (!prev.valid) continue;
 
-		lze e = extend(prev[i], begin, pos);
-		e.prev = i;
+		int offset = prev.offset;
+		char lastc = offset < pos - begin ? pos[-1-offset] : 0;
+		uint8_t delta = pos[0] ^ lastc;
+		lze e = lze {
+			offset,
+			prev.zeroes + !delta,
+			prev.cost +
+				(delta ? lit_cost(delta) : incr_length_cost(prev.zeroes)),
+			true, i, 0,
+		};
+//		printf++("extend offset %d to %d with delta %02x: %s\n", offset, pos - begin, delta, e.dump(prevs));
 		added = insert_lze(dest, added, e);
 	}
 	// Look for new offsets to encode
 	for (const char *b = pos; b >= begin; b--) {
 		if (!memcmp(b, pos+1, MIN_MATCH)) {
-			for (int i = N; i--;) {
-				if (!prev[i].valid) continue;
+			int offset = 1 + pos - b;
+			for (uint8_t i = N; i--;) {
+				const lze& prev = prevs[i];
+				if (!prev.valid) continue;
+				if (offset == prev.offset) continue;
 
-				lze e = new_offset(prev[i], 1 + pos - b, *pos);
-				e.prev = i;
-//				printf++("match at %d (from %d): %s\n", b - begin, pos - begin, e.dump(prev));
+				lze e = new_offset(prevs, i, offset);
+//				printf++("match at %d (from %d): %s\n", b - begin, pos - begin, e.dump(prevs));
 				added = insert_lze(dest, added, e);
 			}
 		}
@@ -228,6 +234,22 @@ string gen(int offset, int length, const char *begin, const char *pos) {
 	return res;
 }
 
+void gen_new_offset(string& res, int offset) {
+	if (offset < 128)
+		res.push_back(0x80 | offset);
+	else
+	{
+		res.push_back(0xff);
+		offset -= 128;
+		genint(res, offset);
+	}
+}
+
+void gen_zeroes(string& res, int n) {
+	res.push_back(0);
+	genint(res, n);
+}
+
 }
 
 string compress(const string& input) {
@@ -248,23 +270,39 @@ string compress(const string& input) {
 
 	string output;
 	int offset = 0;
-	int last_length = 0;
+	int zeroes = 0;
+	int i = 0;
+	auto emit_zeroes = [&]() {
+		if (zeroes) {
+			printf("%5u: %d zeroes, from %d\n", i - 1, zeroes, i - zeroes);
+			gen_zeroes(output, zeroes);
+			zeroes = 0;
+		}
+	};
 	const lze* prev = nullptr;
-	for (int i = 0; i < input.size(); i++) {
+	for (; i < input.size(); i++) {
 		const lze& e = table[N * i + n];
-		last_length++;
-		// This happens at the *end* of each run at the same offset.
-		// That is, we should output the last_length characters of the last run
-		// after the header, then start collecting the next run.
-		if (offset != e.offset || i == input.size() - 1) {
-			printf++("%5u: %s\n", i, prev->dump());
-			output += gen(offset, last_length - 1, &input[0], &input[i]);
-			last_length = 0;
+		if (offset != e.offset) {
+			emit_zeroes();
+			printf++("%5u: %s\n", i, e.dump());
+			printf++("%5u: new offset %d (output@%zx)\n", i, e.offset, output.size());
+			gen_new_offset(output, e.offset);
 			offset = e.offset;
 		}
+		const int c = input[i];
+		const int lastc = i > offset ? input[i-1-offset] : 0;
+		const int delta = c ^ lastc;
+		if (delta) {
+			emit_zeroes();
+			output.push_back(lit_conv_table[delta]);
+		} else {
+			zeroes++;
+		}
+		printf++("%5u: %02x[%d] ^ %02x = %02x\n", i, lastc, i - 1 - offset, c, delta);
 		prev = &e;
 		n = e.next;
 	}
+	emit_zeroes();
 	printf++("Best coding: %s\n", last->dump(last - N));
 	return output;
 }

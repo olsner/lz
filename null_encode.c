@@ -2,39 +2,20 @@
 
 #define R ~(c = getchar())
 
-static void putint(int i) {
-	while (i > 255) {
-		putchar(255); i -= 255;
-	}
-	putchar(i);
-}
+int main() {
+	int c, prev = 0;
+	while (R) {
+		const int d = c ^ prev;
+		prev = c;
 
-#define LBMASK 65535
-static unsigned lbpos;
-static char lb[LBMASK + 1];
-
-void putbuf() {
-	// offset = 0
-	putint(0);
-	putint(lbpos - 1);
-	int lastc;
-	if (lbpos > 0) {
-		putchar(lastc = lb[0]);
-		int i = 1;
-		while (--lbpos) {
-			int c = lb[i++];
-			putchar(lastc ^ c);
-			lastc = c;
+		if (d & 0x80) putchar(0x80);
+		if (d) {
+			putchar(d & 0x7f);
+		} else {
+			// RLE encoded with run-length 1
+			putchar(0);
+			putchar(1);
 		}
 	}
-	lbpos = 0;
-}
-
-int main() {
-	int c;
-	while (R) {
-		lb[lbpos++] = c;
-		if (lbpos == LBMASK + 1) putbuf();
-	}
-	if (lbpos) putbuf();
+	return 0;
 }

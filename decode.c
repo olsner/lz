@@ -22,36 +22,49 @@ fail:
 }
 
 #define LBMASK 65535
-static unsigned lbpos;
+static unsigned lbpos = 0;
 static char lb[LBMASK + 1];
 
-void out(int c) {
+// lbpos is the next character to write
+// offset==0 means offset to the last character, i.e. lbpos-1
+void out(int offset, int d) {
+	const int lboff = (lbpos - 1 - offset) & LBMASK;
+	const int c = d ^ lb[lboff];
+	debug("%5d: %02x[%d] ^ %02x = %02x (%c)\n",
+			lbpos,
+			lb[lboff], lboff,
+			d,
+			c, isprint(c) ? c : '.');
+	putchar(c);
+
 	lb[lbpos] = c;
 	lbpos = (lbpos + 1) & LBMASK;
-	putchar(c);
 }
 
 int main() {
 	int c;
-	for (;;) {
-		int offset = getint();
-		if (offset < 0) return 0;
-		offset++;
-		debug("offset is %d\n", offset);
-		int len = getint();
-		if (len < 0) goto fail;
-		debug("length of block is %d\n", len);
-		// one non-xored byte
-		RDO out(c);
-		// and len xored bytes
-		while (len--) {
-			RDO {
-				int back = lb[(lbpos - offset) & LBMASK];
-				debug("In %02x ^ %02x = %02x [%d - %d]\n", c, back, c ^ back, lbpos, offset);
-				out(c ^ back);
+	int offset = 0;
+#define OUTX(c) out(offset, c)
+	while (R) {
+		if (c == 0xff) {
+			offset = 128 + getint();
+			debug("offset := %d\n", offset);
+		} else if (c & 0x80) {
+			int x = c & 0x7f;
+			if (x) {
+				offset = x;
+				debug("offset := %d\n", offset);
+			} else {
+				RDO OUTX(c | 0x80);
 			}
+		} else if (c) {
+			OUTX(c);
+		} else {
+			int count = getint();
+			while (count--) OUTX(0);
 		}
 	}
+	return 0;
 fail:
 	return 1;
 }
