@@ -154,6 +154,14 @@ lze new_offset(const lze& prev, uint8_t i, size_t offset, size_t match_len) {
 	};
 }
 
+template <typename T>
+void foreach_match(const char* const begin, const char* const end, size_t n, T&& cb) {
+	const char *p = begin;
+	while ((p = (const char *)memmem(p, end - p, end, n))) {
+		cb(p++);
+	}
+}
+
 void add(const lze *prevs, const char *begin, const char *pos, const char *end, lze *dest) {
 	int added = 0;
 	// Length-extend each match by one (delta) literal
@@ -172,21 +180,19 @@ void add(const lze *prevs, const char *begin, const char *pos, const char *end, 
 		return;
 	}
 	// Look for new offsets to encode
-	for (const char *b = pos - 1; b >= begin; b--) {
-		if (!memcmp(b, pos, MIN_MATCH)) {
-			int offset = pos - b - 1;
-			size_t match_len = strpfxlen(b, pos);
-			debug("%zu byte match at %d (from %d): offset=%d\n", match_len, b - begin, pos - begin, offset);
-			for (uint8_t i = 0; i < N; i++) {
-				const lze& prev = prevs[i];
-				if (!prev.valid) break;
-				if (offset == prev.offset) continue;
+	foreach_match(begin, pos, MIN_MATCH, [&](const char *b) {
+		int offset = pos - b - 1;
+		size_t match_len = strpfxlen(b, pos);
+		debug("%zu byte match at %d (from %d): offset=%d\n", match_len, b - begin, pos - begin, offset);
+		for (uint8_t i = 0; i < N; i++) {
+			const lze& prev = prevs[i];
+			if (!prev.valid) break;
+			if (offset == prev.offset) continue;
 
-				lze e = new_offset(prev, i, offset, match_len);
-				added = insert_lze(dest, added, e);
-			}
+			lze e = new_offset(prev, i, offset, match_len);
+			added = insert_lze(dest, added, e);
 		}
-	}
+	});
 }
 
 void dump_entries(const lze *begin, const lze *end) {
