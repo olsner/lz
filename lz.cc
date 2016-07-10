@@ -274,7 +274,7 @@ string compress(const string& input) {
 		}
 	};
 	for (; i < input.size(); i++) {
-		const lze& e = table[N * i + n];
+		const lze& e = table[N * (i + 1) + n];
 		printf++("%5u: %s\n", i, e.dump());
 		if (offset != e.offset) {
 			emit_zeroes();
