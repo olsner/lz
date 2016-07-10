@@ -29,6 +29,8 @@ exit $e
 #include <string>
 #include <stdarg.h>
 
+namespace {
+
 const char *VarargifyXX(const std::string &s) { return s.c_str(); }
 template <typename T> T VarargifyXX(T t) { return t; }
 
@@ -136,6 +138,8 @@ SnprintfWrapper __snprintf;
 SprintfWrapper __sprintf;
 PrintfWrapper __printf;
 FprintfWrapper __fprintf;
+
+}
 
 #define fprintf __fprintf
 #define snprintf __snprintf
