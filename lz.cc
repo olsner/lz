@@ -11,6 +11,9 @@ using namespace std;
 
 namespace {
 
+#define LOG_DEBUG 0
+#define debug(fmt, ...) do { if (LOG_DEBUG) fprintf++(stderr, fmt, ## __VA_ARGS__); } while (0)
+
 typedef unsigned Cost;
 // x is the cost value for one whole byte
 #define BYTE_COST(x) ((x) * 8)
@@ -75,9 +78,8 @@ struct lze
 		assert(valid && other.valid);
 		return offset == other.offset && zeroes == other.zeroes;
 	}
-	string dump(const lze* prev = nullptr) const {
-		return sprintf++("%3d|%4d|%d", offset, zeroes, cost);
-		// TODO Figure out which prev was the base for this (or actually save it)
+	string dump() const {
+		return sprintf++("%3d|%2d|%d|%d", offset, zeroes, cost, prev);
 	}
 
 };
@@ -140,7 +142,7 @@ void add(const lze *prevs, const char *begin, const char *pos, const char *end, 
 				(delta ? lit_cost(delta) : incr_length_cost(prev.zeroes)),
 			true, i, 0,
 		};
-//		printf++("extend offset %d to %d with delta %02x: %s\n", offset, pos - begin, delta, e.dump(prevs));
+		debug("extend offset %d to %d with delta %02x: %s\n", offset, pos - begin, delta, e.dump());
 		added = insert_lze(dest, added, e);
 	}
 	if (size_t(end - pos) < MIN_MATCH) {
@@ -151,7 +153,7 @@ void add(const lze *prevs, const char *begin, const char *pos, const char *end, 
 		if (!memcmp(b, pos, MIN_MATCH)) {
 			int offset = pos - b - 1;
 			size_t match_len = strpfxlen(b, pos);
-			printf++("%zu byte match at %d (from %d): offset=%d\n", match_len, b - begin, pos - begin, offset);
+			debug("%zu byte match at %d (from %d): offset=%d\n", match_len, b - begin, pos - begin, offset);
 			for (uint8_t i = N; i--;) {
 				const lze& prev = prevs[i];
 				if (!prev.valid) continue;
@@ -165,16 +167,16 @@ void add(const lze *prevs, const char *begin, const char *pos, const char *end, 
 }
 
 void dump_entries(const lze *begin, const lze *end) {
-	unsigned n = 0;
-	const lze *prev = nullptr;
-	for (; begin < end; begin += N)
+	int n = 0;
+	while (begin < end)
 	{
-		printf("%4u:", n++);
+		begin += N;
+		printf("%4d:", n++);
 		for (size_t i = 0; i < N; i++) {
-			printf++("\t%s", begin[i].dump(prev));
+			if (!begin[i].valid) break;
+			printf++("\t%s", begin[i].dump());
 		}
 		printf("\n");
-		prev = begin;
 	}
 }
 
@@ -228,26 +230,32 @@ string compress(const string& input) {
 	}
 	lze* end = table + std::min(input.size(), size_t(LBMASK) + 1) * N;
 	lze* last = end - N;
-	dump_entries(table, end);
-	int n = trace(table, end);
+	if (LOG_DEBUG) dump_entries(table, end);
+	unsigned n = trace(table, end);
 
 	string output;
 	size_t offset = 0;
 	int zeroes = 0;
 	size_t i = 0;
+	unsigned max_depth = 0;
 	auto emit_zeroes = [&]() {
 		if (zeroes) {
-			printf("%5u: %d zeroes, from %d\n", i - 1, zeroes, i - zeroes);
+			debug("%5u: %d zeroes, from %d\n", i - 1, zeroes, i - zeroes);
 			gen_zeroes(output, zeroes);
 			zeroes = 0;
 		}
 	};
 	for (; i < input.size(); i++) {
 		const lze& e = table[N * (i + 1) + n];
-		printf++("%5u: %s\n", i, e.dump());
+		if (n > max_depth) {
+			debug("%5u: %s \t< new max depth\n", i, e.dump());
+			max_depth = max(max_depth, n);
+		} else {
+			debug("%5u: %s\n", i, e.dump());
+		}
 		if (offset != e.offset) {
 			emit_zeroes();
-			printf++("%5u: new offset %d (output@%zx)\n", i, e.offset, output.size());
+			debug("%5u: new offset %d (output@%zx)\n", i, e.offset, output.size());
 			gen_new_offset(output, e.offset);
 			offset = e.offset;
 		}
@@ -263,11 +271,12 @@ string compress(const string& input) {
 		} else {
 			zeroes++;
 		}
-		printf++("%5u: %02x[%d] ^ %02x = %02x\n", i, lastc, i - 1 - offset, c, delta);
+		debug("%5u: %02x[%d] ^ %02x = %02x\n", i, lastc, i - 1 - offset, c, delta);
 		n = e.next;
 	}
 	emit_zeroes();
-	printf++("Best coding: %s\n", last->dump(last - N));
+	debug("Best coding: %s\n", last->dump());
+	debug("Max depth used: %u of %zu\n", max_depth, N);
 	return output;
 }
 
