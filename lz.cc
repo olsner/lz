@@ -287,6 +287,9 @@ string compress(const string& input) {
 		const uint8_t delta = c ^ lastc;
 		if (delta) {
 			emit_zeroes();
+			if (delta & 0x80) {
+				output.push_back(0x80);
+			}
 			output.push_back(lit_conv_table[delta]);
 		} else {
 			zeroes++;
