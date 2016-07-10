@@ -1,5 +1,5 @@
-CFLAGS = -g -O2
-CXXFLAGS = -g -O2 -std=gnu++11
+CFLAGS = -g -O2 -Wall
+CXXFLAGS = -g -O2 -std=gnu++11 -Wall
 
 all: programs test
 programs: decode null_encode lz lit_conv

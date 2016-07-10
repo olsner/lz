@@ -134,10 +134,11 @@ struct FprintfWrapper {
 	}
 };
 
-SnprintfWrapper __snprintf;
-SprintfWrapper __sprintf;
-PrintfWrapper __printf;
-FprintfWrapper __fprintf;
+#define UNUSED __attribute__((unused))
+SnprintfWrapper __snprintf UNUSED;
+SprintfWrapper __sprintf UNUSED;
+PrintfWrapper __printf UNUSED;
+FprintfWrapper __fprintf UNUSED;
 
 }
 
