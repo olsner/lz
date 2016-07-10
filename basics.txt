@@ -41,6 +41,6 @@ Then send this through entropy encoding with contexts:
 (runlength encoding?)
 
 0x80 | x = new offset, x > 0
-0xff 255x = 128 + 255x-encoded length offset
+0xff 255x = 127 + 255x-encoded length offset
 0x80 0-0x7f = escaped high-bit-set delta
 0x00 255x = RLE encoded zero

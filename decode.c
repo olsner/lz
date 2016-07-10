@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 
 #define R ((c = getchar()) != EOF)
@@ -47,7 +48,7 @@ int main() {
 #define OUTX(c) out(offset, c)
 	while (R) {
 		if (c == 0xff) {
-			offset = 128 + getint();
+			offset = 127 + getint();
 			debug("offset := %d\n", offset);
 		} else if (c & 0x80) {
 			int x = c & 0x7f;

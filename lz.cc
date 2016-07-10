@@ -33,7 +33,7 @@ Cost length_cost(int len) {
 	return BYTE_COST((len + 254) / 255);
 }
 Cost new_offset_cost(int len) {
-	return BYTE_COST(1) + (len > 127 ? length_cost(len-128) : 0);
+	return BYTE_COST(1) + (len >= 127 ? length_cost(len-127) : 0);
 }
 // Amount to add to cost when increasing 'len' by 1
 Cost incr_length_cost(int len) {
@@ -223,12 +223,13 @@ void genint(string& res, int i) {
 }
 
 void gen_new_offset(string& res, int offset) {
-	if (offset < 128)
+	assert(offset);
+	if (offset < 127)
 		res.push_back(0x80 | offset);
 	else
 	{
 		res.push_back(0xff);
-		offset -= 128;
+		offset -= 127;
 		genint(res, offset);
 	}
 }
