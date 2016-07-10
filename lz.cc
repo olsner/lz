@@ -17,37 +17,6 @@ typedef unsigned Cost;
 #define BIT_COST(x) (x)
 #define VAL_COST(x) ilog2(x)
 
-uint8_t lit_conv_table[256];
-
-void init_lit_table(uint8_t *dest)
-{
-#if 0
-	uint8_t rev[256];
-	for (size_t n = 256; n--;) {
-		rev[n] = n;
-	}
-	sort(rev, rev + 256,
-			[](uint8_t l, uint8_t r) -> bool {
-				int pl = __builtin_popcount(l), pr = __builtin_popcount(r);
-				return pl < pr || (pl == pr && l < r);
-				// return (pl << 8) | l < (pr << 8) | r;
-			});
-	for (size_t n = 256; n--;) {
-		dest[rev[n]] = n;
-	}
-#else
-	for (size_t n = 256; n--;) {
-		dest[n] = n;
-	}
-#endif
-
-#if 0
-	for (int v = 0; v < 256; v++) {
-		printf("%d: %d\n", v, dest[v]);
-	}
-#endif
-}
-
 // 1 + ilog2(v), ilog2(0) = 0
 int ilog2(int v) {
 	return (v > 128) + (v > 64) + (v > 32) + (v > 16) + (v > 8) + (v > 4) + (v > 2) + (v > 1) + (v > 0);
@@ -290,7 +259,7 @@ string compress(const string& input) {
 			if (delta & 0x80) {
 				output.push_back(0x80);
 			}
-			output.push_back(lit_conv_table[delta]);
+			output.push_back(delta);
 		} else {
 			zeroes++;
 		}
@@ -303,8 +272,6 @@ string compress(const string& input) {
 }
 
 int main(int argc, const char *argv[]) {
-	init_lit_table(lit_conv_table);
-
 	const string input = argc > 1 ? read_file(argv[1]) : read_stdin();
 	fprintf(stderr, "%zu bytes of input\n", input.size());
 	const string output = compress(input);
