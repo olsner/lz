@@ -1,3 +1,5 @@
+aÅbÄcÖ
+
 * LZ-based (ish) - link to cbloom post
   Basis: each byte is xor'ed against a current "match" offset,
   some command for setting new offset,
