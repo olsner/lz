@@ -26,7 +26,8 @@ int ilog2(int v) {
 }
 
 Cost lit_cost(uint8_t lit) {
-	return BYTE_COST(1); // VAL_COST(lit_conv_table[lit]);
+	// VAL_COST(lit);
+	return lit < 0x80 ? BYTE_COST(1) : BYTE_COST(2);
 }
 Cost length_cost(int len) {
 	return BYTE_COST((len + 254) / 255);
@@ -37,6 +38,9 @@ Cost new_offset_cost(int len) {
 // Amount to add to cost when increasing 'len' by 1
 Cost incr_length_cost(int len) {
 	return length_cost(len + 1) - length_cost(len);
+}
+Cost zeroes_cost(size_t zeroes) {
+	return 1 + length_cost(zeroes);
 }
 
 string read_file(FILE *fp, bool close_after = false) {
@@ -71,12 +75,16 @@ struct lze
 	size_t zeroes : 16; // number of consecutive zero deltas
 	unsigned cost : 24; // cost in bytes to get this far
 	unsigned valid : 1; // 1 if valid, 0 if not filled in
-	unsigned prev : 4; // index of previous entry
-	unsigned next : 3; // index of next entry, filled in by trace
+	unsigned prev : 8; // index of previous entry
+	unsigned next : 8; // index of next entry, filled in by trace
 
 	bool operator==(const lze& other) const {
 		assert(valid && other.valid);
 		return offset == other.offset && zeroes == other.zeroes;
+	}
+	bool operator<(const lze& other) const {
+		return cost < other.cost /*||
+			(cost == other.cost && zeroes > other.zeroes)*/;
 	}
 	string dump() const {
 		return sprintf++("%3d|%2d|%d|%d", offset, zeroes, cost, prev);
@@ -85,8 +93,15 @@ struct lze
 };
 
 const unsigned LBMASK = 65535;
-// Number of entries to try in "dynamic programming" solver
-const size_t N = 8;
+// N seems to help quite a lot, that's not very good for performance.
+const size_t N = 32;
+// Cost of a match is:
+// 1 byte offset header (at least)
+// 1 byte 0 + at least 1 byte run length
+// (= 3 or more bytes)
+// compared to 1-2 bytes per delta, it's possible to make up for it
+// with 2 bytes (deltas that both require 2 bytes), but it's unlikely.
+// (Might be more likely on binary files though.)
 const size_t MIN_MATCH = 4;
 
 void init(lze* begin, lze* end) {
@@ -95,7 +110,7 @@ void init(lze* begin, lze* end) {
 
 int insert_lze(lze *dest, size_t n, lze result) {
 	for (size_t i = 0; i < n; i++) {
-		if (result.cost < dest[i].cost) {
+		if (result < dest[i]) {
 			swap(dest[i], result);
 		}
 		if (result == dest[i]) {
@@ -109,39 +124,47 @@ int insert_lze(lze *dest, size_t n, lze result) {
 	return n;
 }
 
-lze new_offset(const lze *p, uint8_t i, size_t offset, size_t match_len) {
-	const lze& prev = p[i];
-	return lze {
-		offset,
-		1,
-		prev.cost + new_offset_cost(offset) + 1 + incr_length_cost(0),
-		true, i, 0,
-	};
-}
-
 size_t strpfxlen(const char* a, const char* b) {
 	size_t n = 0;
 	while (*a == *b) a++, b++, n++;
 	return n;
 }
 
+lze extend_zero(const lze& prev, unsigned i) {
+	return lze {
+		prev.offset,
+		prev.zeroes + 1u,
+		prev.cost
+			+ BYTE_COST(prev.zeroes ? 0 : 1)
+			+ incr_length_cost(prev.zeroes),
+		true, i, 0,
+	};
+}
+
+lze extend_delta(const lze& prev, unsigned i, uint8_t delta) {
+	return lze { prev.offset, 0, prev.cost + lit_cost(delta), true, i, 0 };
+}
+
+lze new_offset(const lze& prev, uint8_t i, size_t offset, size_t match_len) {
+	return lze {
+		offset,
+		1,
+		prev.cost + new_offset_cost(offset) + zeroes_cost(1),
+		true, i, 0,
+	};
+}
+
 void add(const lze *prevs, const char *begin, const char *pos, const char *end, lze *dest) {
 	int added = 0;
 	// Length-extend each match by one (delta) literal
-	for (uint8_t i = N; i--;) {
+	for (uint8_t i = 0; i < N; i++) {
 		const lze& prev = prevs[i];
-		if (!prev.valid) continue;
+		if (!prev.valid) break;
 
 		size_t offset = prev.offset;
 		uint8_t lastc = offset < size_t(pos - begin) ? pos[-1-offset] : 0;
 		uint8_t delta = pos[0] ^ lastc;
-		lze e = lze {
-			offset,
-			delta ? 0u : prev.zeroes + 1,
-			prev.cost +
-				(delta ? lit_cost(delta) : incr_length_cost(prev.zeroes)),
-			true, i, 0,
-		};
+		lze e = delta ? extend_delta(prev, i, delta) : extend_zero(prev, i);
 		debug("extend offset %d to %d with delta %02x: %s\n", offset, pos - begin, delta, e.dump());
 		added = insert_lze(dest, added, e);
 	}
@@ -154,12 +177,12 @@ void add(const lze *prevs, const char *begin, const char *pos, const char *end, 
 			int offset = pos - b - 1;
 			size_t match_len = strpfxlen(b, pos);
 			debug("%zu byte match at %d (from %d): offset=%d\n", match_len, b - begin, pos - begin, offset);
-			for (uint8_t i = N; i--;) {
+			for (uint8_t i = 0; i < N; i++) {
 				const lze& prev = prevs[i];
-				if (!prev.valid) continue;
+				if (!prev.valid) break;
 				if (offset == prev.offset) continue;
 
-				lze e = new_offset(prevs, i, offset, match_len);
+				lze e = new_offset(prev, i, offset, match_len);
 				added = insert_lze(dest, added, e);
 			}
 		}
@@ -180,8 +203,8 @@ void dump_entries(const lze *begin, const lze *end) {
 	}
 }
 
-int trace(lze* begin, lze* end) {
-	int p = 0, n = 0;
+unsigned trace(lze* begin, lze* end) {
+	unsigned p = 0, n = 0;
 	while (end > begin) {
 		end -= N;
 		end[p].next = n;
