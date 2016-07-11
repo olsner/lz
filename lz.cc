@@ -83,8 +83,7 @@ struct lze
 		return offset == other.offset && zeroes == other.zeroes;
 	}
 	bool operator<(const lze& other) const {
-		return cost < other.cost /*||
-			(cost == other.cost && zeroes > other.zeroes)*/;
+		return cost < other.cost;
 	}
 	string dump() const {
 		return sprintf++("%3d|%2d|%d|%d", offset, zeroes, cost, prev);
@@ -102,7 +101,7 @@ const size_t N = 32;
 // compared to 1-2 bytes per delta, it's possible to make up for it
 // with 2 bytes (deltas that both require 2 bytes), but it's unlikely.
 // (Might be more likely on binary files though.)
-const size_t MIN_MATCH = 4;
+const size_t MIN_MATCH = 3;
 
 void init(lze* begin, lze* end) {
 	begin[0].valid = true;
@@ -145,7 +144,7 @@ lze extend_delta(const lze& prev, unsigned i, uint8_t delta) {
 	return lze { prev.offset, 0, prev.cost + lit_cost(delta), true, i, 0 };
 }
 
-lze new_offset(const lze& prev, uint8_t i, size_t offset, size_t match_len) {
+lze new_offset(const lze& prev, uint8_t i, size_t offset) {
 	return lze {
 		offset,
 		1,
@@ -179,19 +178,17 @@ void add(const lze *prevs, const char *begin, const char *pos, const char *end, 
 	if (size_t(end - pos) < MIN_MATCH) {
 		return;
 	}
+
 	// Look for new offsets to encode
 	foreach_match(begin, pos, MIN_MATCH, [&](const char *b) {
 		int offset = pos - b - 1;
 		size_t match_len = strpfxlen(b, pos);
 		debug("%zu byte match at %d (from %d): offset=%d\n", match_len, b - begin, pos - begin, offset);
-		for (uint8_t i = 0; i < N; i++) {
-			const lze& prev = prevs[i];
-			if (!prev.valid) break;
-			if (offset == prev.offset) continue;
+		const lze& prev = prevs[0];
+		if (offset == prev.offset) return;
 
-			lze e = new_offset(prev, i, offset, match_len);
-			added = insert_lze(dest, added, e);
-		}
+		lze e = new_offset(prev, 0, offset);
+		added = insert_lze(dest, added, e);
 	});
 }
 
